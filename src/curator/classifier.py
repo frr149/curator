@@ -97,7 +97,7 @@ def _classify_batch(
     return results
 
 
-def run_classification(*, dry_run: bool, team: str | None, limit: int) -> None:
+def run_classification(*, dry_run: bool, team: str | None, limit: int, notify: bool = True) -> None:
     """Clasificar issues sin label usando LLM."""
     config = load_config()
     issues = list_unlabeled(team=team, limit=limit)
@@ -146,17 +146,16 @@ def run_classification(*, dry_run: bool, team: str | None, limit: int) -> None:
 
     # Separar por confianza
     auto_count = 0
-    review_count = 0
+    review_items: list[Classification] = []
     skip_count = 0
 
     for r in results:
         if r.confidence >= config.classifier.auto_threshold:
-            # Auto-apply
             update_label(r.issue.id, r.label)
             click.echo(f"  ✓ {r.issue.id} → {r.label} ({r.confidence:.0%}) — {r.reason}")
             auto_count += 1
         elif r.confidence >= config.classifier.review_threshold:
-            # Dejar comentario para review
+            # Dejar comentario en Linear
             alts = ", ".join(r.alternatives[:3]) if r.alternatives else "none"
             comment = (
                 f"🏷 Curator suggestion: {r.label} ({r.confidence:.0%}) — \"{r.reason}\"\n"
@@ -165,9 +164,55 @@ def run_classification(*, dry_run: bool, team: str | None, limit: int) -> None:
             )
             add_comment(r.issue.id, comment)
             click.echo(f"  ? {r.issue.id} → {r.label}? ({r.confidence:.0%}) — saved for review")
-            review_count += 1
+            review_items.append(r)
         else:
             click.echo(f"  ⏭ {r.issue.id} — skipped ({r.confidence:.0%})")
             skip_count += 1
 
-    click.echo(f"── Auto: {auto_count} | Review: {review_count} | Skip: {skip_count}")
+    click.echo(f"── Auto: {auto_count} | Review: {len(review_items)} | Skip: {skip_count}")
+
+    # Enviar reviews a Telegram
+    if notify and review_items:
+        _send_telegram_reviews(review_items)
+
+
+def _send_telegram_reviews(reviews: list[Classification]) -> None:
+    """Envía mensajes de review a Telegram con inline keyboards."""
+    import asyncio
+
+    from telegram import Bot
+
+    from curator.bot import _get_chat_id, _get_token, _review_cache, build_label_review_message
+
+    token = _get_token()
+    chat_id = _get_chat_id()
+    if not chat_id:
+        click.echo("  ⚠ No TELEGRAM_CHAT_ID configured, skipping notifications", err=True)
+        return
+
+    bot = Bot(token=token)
+
+    async def send_all() -> None:
+        for r in reviews:
+            _review_cache[r.issue.id] = {
+                "suggested": r.label,
+                "confidence": r.confidence,
+                "title": r.issue.title,
+            }
+            text, keyboard = build_label_review_message(
+                issue_id=r.issue.id,
+                title=r.issue.title,
+                suggested=r.label,
+                confidence=r.confidence,
+                reason=r.reason,
+                alternatives=r.alternatives,
+            )
+            await bot.send_message(
+                chat_id=chat_id,
+                text=text,
+                reply_markup=keyboard,
+                parse_mode="Markdown",
+            )
+            click.echo(f"  📱 {r.issue.id} → sent to Telegram")
+
+    asyncio.run(send_all())
