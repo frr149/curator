@@ -1,0 +1,40 @@
+[project]
+name = "curator"
+version = "0.1.0"
+description = "AI-powered issue triage for Linear. Classifies, suggests labels, learns from corrections. Review from Telegram."
+readme = "README.md"
+requires-python = ">=3.12"
+license = "MIT"
+authors = [{ name = "Fernando Rodriguez Romero", email = "fernando@frr.dev" }]
+dependencies = [
+    "click>=8.1",
+    "python-telegram-bot>=21",
+    "openai>=1.0",
+    "python-dotenv>=1.0",
+]
+
+[project.scripts]
+curator = "curator.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/curator"]
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "ruff>=0.4",
+]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "UP", "B", "SIM", "TCH"]
+
+[tool.basedpyright]
+typeCheckingMode = "strict"
