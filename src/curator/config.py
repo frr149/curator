@@ -17,6 +17,7 @@ class ClassifierConfig:
 class TelegramConfig:
     bot_token: str = ""
     chat_id: str = ""
+    bot_token_ref: str = ""
 
 
 @dataclass
@@ -58,6 +59,7 @@ def load_config() -> Config:
         config.telegram = TelegramConfig(
             bot_token=t.get("bot_token", ""),
             chat_id=t.get("chat_id", ""),
+            bot_token_ref=t.get("bot_token_ref", ""),
         )
 
     config.openrouter_api_key = data.get("openrouter_api_key", "")

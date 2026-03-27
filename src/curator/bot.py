@@ -19,34 +19,32 @@ _review_cache: dict[str, dict[str, object]] = {}
 
 
 def _get_token() -> str:
-    """Obtiene el bot token desde env o 1Password."""
+    """Obtiene el bot token desde env, config, o 1Password."""
     token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
     if not token:
-        try:
-            result = subprocess.run(
-                ["op", "read", "op://FRR DEV/Telegram Bot/bot-token"],
-                capture_output=True, text=True,
-            )
-            token = result.stdout.strip()
-        except Exception:
-            pass
+        from curator.config import load_config
+        config = load_config()
+        token = config.telegram.bot_token
+        if not token and config.telegram.bot_token_ref:
+            try:
+                result = subprocess.run(
+                    ["op", "read", config.telegram.bot_token_ref],
+                    capture_output=True, text=True,
+                )
+                token = result.stdout.strip()
+            except Exception:
+                pass
     if not token:
-        raise RuntimeError("No TELEGRAM_BOT_TOKEN found. Set env var or configure 1Password.")
+        raise RuntimeError("No TELEGRAM_BOT_TOKEN found. Set env var or configure in config.toml.")
     return token
 
 
 def _get_chat_id() -> str:
-    """Obtiene el chat ID desde env o 1Password."""
+    """Obtiene el chat ID desde env o config."""
     chat_id = os.environ.get("TELEGRAM_CHAT_ID", "")
     if not chat_id:
-        try:
-            result = subprocess.run(
-                ["op", "read", "op://FRR DEV/Telegram Bot/group-id"],
-                capture_output=True, text=True,
-            )
-            chat_id = result.stdout.strip()
-        except Exception:
-            pass
+        from curator.config import load_config
+        chat_id = load_config().telegram.chat_id
     return chat_id
 
 
@@ -79,10 +77,12 @@ def build_label_review_message(
     buttons.append(row1)
 
     if alternatives:
-        row2: list[InlineKeyboardButton] = []
-        for alt in alternatives[:4]:
-            row2.append(InlineKeyboardButton(f"🏷 {alt}", callback_data=f"L:{issue_id}:{alt}"))
-        buttons.append(row2)
+        # Máximo 2 botones por fila para que no se trunquen
+        for i in range(0, min(len(alternatives), 4), 2):
+            row: list[InlineKeyboardButton] = []
+            for alt in alternatives[i:i + 2]:
+                row.append(InlineKeyboardButton(f"🏷 {alt}", callback_data=f"L:{issue_id}:{alt}"))
+            buttons.append(row)
 
     buttons.append([InlineKeyboardButton("⏭ skip", callback_data=f"S:{issue_id}")])
 
